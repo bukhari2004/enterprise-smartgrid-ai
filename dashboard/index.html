@@ -1,0 +1,230 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Smart Grid Intelligence - Executive Dashboard</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<style>
+  :root{--bg:#0f1621;--card:#172233;--ink:#e7edf5;--mut:#8ea0b8;--line:#263449;--ok:#3ecf8e;--warn:#f5b942;--bad:#ff5d6c;--acc:#4da3ff}
+  @media (prefers-color-scheme: light){:root{--bg:#f3f6fa;--card:#fff;--ink:#16202e;--mut:#5d6b80;--line:#dbe3ee;--acc:#1769d1}}
+  *{box-sizing:border-box} body{margin:0;background:var(--bg);color:var(--ink);font:14px/1.45 system-ui,Segoe UI,Roboto,sans-serif}
+  header{display:flex;gap:12px;align-items:center;flex-wrap:wrap;padding:14px 20px;border-bottom:1px solid var(--line)}
+  header h1{font-size:17px;margin:0;flex:1;min-width:240px} input,button,select{background:var(--card);color:var(--ink);border:1px solid var(--line);border-radius:8px;padding:7px 10px;font:inherit}
+  button{cursor:pointer;background:var(--acc);color:#fff;border:0} button.sec{background:var(--card);color:var(--ink);border:1px solid var(--line)}
+  main{padding:18px 20px;display:grid;gap:14px;grid-template-columns:repeat(12,1fr)}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:14px;min-width:0} .card h2{margin:0 0 8px;font-size:13px;color:var(--mut);font-weight:600;letter-spacing:.03em;text-transform:uppercase}
+  .kpi{grid-column:span 2} .kpi .v{font-size:28px;font-weight:700} .kpi .s{color:var(--mut);font-size:12px}
+  .w6{grid-column:span 6}.w4{grid-column:span 4}.w8{grid-column:span 8}.w12{grid-column:span 12}
+  @media(max-width:1000px){.kpi{grid-column:span 4}.w6,.w4,.w8{grid-column:span 12}}
+  table{width:100%;border-collapse:collapse;font-size:13px} th,td{text-align:left;padding:5px 6px;border-bottom:1px solid var(--line)} th{color:var(--mut);font-weight:600}
+  .pill{padding:1px 8px;border-radius:99px;font-size:11px;font-weight:600} .critical{background:var(--bad);color:#fff}.high{background:#ff8a4c;color:#fff}.warning{background:var(--warn);color:#222}.info{background:var(--line)}
+  .good{color:var(--ok)}.fair{color:var(--warn)}.poor{color:var(--bad)} ul{margin:0;padding-left:18px} li{margin:4px 0}
+  #chat{height:240px;overflow:auto;border:1px solid var(--line);border-radius:8px;padding:8px;white-space:pre-wrap;font-size:13px;background:var(--bg)}
+  .me{color:var(--acc);font-weight:600} .row{display:flex;gap:8px;margin-top:8px} .row input{flex:1}
+  canvas{max-height:260px} #err{color:var(--bad);padding:0 20px}
+  .chips{display:flex;gap:6px;flex-wrap:wrap;margin-top:6px}.chips button{font-size:12px;padding:3px 9px}
+</style>
+</head>
+<body>
+<header>
+  <h1>⚡ Smart Grid Intelligence &amp; Energy Optimization — Executive Dashboard</h1>
+  <input id="key" value="demo-operator" size="16" title="X-API-Key">
+  <button onclick="load()">Refresh</button>
+  <span id="stamp" style="color:var(--mut)"></span>
+</header>
+<div id="err"></div>
+<main>
+  <div class="card kpi"><h2>Grid health score</h2><div class="v" id="k_health">–</div><div class="s" id="k_health_s"></div></div>
+  <div class="card kpi"><h2>24h peak demand</h2><div class="v" id="k_peak">–</div><div class="s" id="k_peak_s"></div></div>
+  <div class="card kpi"><h2>Renewable utilization</h2><div class="v" id="k_ren">–</div><div class="s" id="k_ren_s"></div></div>
+  <div class="card kpi"><h2>Expected failures (7d)</h2><div class="v" id="k_fail">–</div><div class="s" id="k_fail_s"></div></div>
+  <div class="card kpi"><h2>Open alerts</h2><div class="v" id="k_alerts">–</div><div class="s" id="k_alerts_s"></div></div>
+  <div class="card kpi"><h2>Dispatch cost (24h)</h2><div class="v" id="k_cost">–</div><div class="s" id="k_cost_s"></div></div>
+
+  <div class="card w8"><h2>Demand forecast (P10–P90) vs renewables, MW</h2><canvas id="c_demand"></canvas></div>
+  <div class="card w4"><h2>AI recommendations</h2><ul id="recs"></ul>
+    <h2 style="margin-top:14px">Health components</h2><canvas id="c_health" style="max-height:170px"></canvas></div>
+
+  <div class="card w4"><h2>Equipment health (transformer risk tiers)</h2><canvas id="c_tiers"></canvas></div>
+  <div class="card w4"><h2>Energy-theft heatmap (suspects by area)</h2><canvas id="c_theft"></canvas></div>
+  <div class="card w4"><h2>Theft by region</h2><table id="t_theft"></table></div>
+
+  <div class="card w8"><h2>Alert center</h2><table id="t_alerts"></table></div>
+  <div class="card w4"><h2>Scenario: power-plant outage</h2>
+    <div class="row"><select id="plant"></select><button onclick="simulate()">Simulate</button></div>
+    <div id="sim" style="margin-top:10px;font-size:13px"></div></div>
+
+  <div class="card w12"><h2>AI Grid Copilot</h2>
+    <div id="chat"></div>
+    <div class="row"><input id="q" placeholder="Ask: Which transformer is likely to fail next week?" onkeydown="if(event.key==='Enter')ask()"><button onclick="ask()">Ask</button></div>
+    <div class="chips" id="chips"></div></div>
+</main>
+<script>
+const $=id=>document.getElementById(id); const fmt=(n,d=0)=>Number(n).toLocaleString(undefined,{maximumFractionDigits:d});
+const H=()=>({'X-API-Key':$('key').value});
+async function api(path,opt={}){const r=await fetch('/api/v1'+path,{headers:{...H(),'Content-Type':'application/json'},...opt});
+  if(!r.ok){throw new Error(r.status+' '+(await r.text()))} return r.json()}
+const charts={};
+function chart(id,cfg){ if(typeof Chart==='undefined') return; if(charts[id]) charts[id].destroy(); charts[id]=new Chart($(id),cfg)}
+const col={acc:'#4da3ff',ok:'#3ecf8e',warn:'#f5b942',bad:'#ff5d6c',mut:'#8ea0b8'};
+async function load(){
+  $('err').textContent='';
+  try{
+    const d=await api('/dashboard');
+    $('stamp').textContent='as of '+d.generated_at.replace('T',' ').slice(0,16);
+    const h=d.grid_health; $('k_health').innerHTML=`<span class="${h.label}">${h.score}</span>`; $('k_health_s').textContent=h.label+' / 100';
+    $('k_peak').textContent=fmt(d.demand_peak_24h.peak_mw)+' MW'; $('k_peak_s').textContent='reserve margin '+d.demand_peak_24h.reserve_margin_pct+'%';
+    $('k_ren').textContent=d.renewable_utilization_pct+'%'; $('k_ren_s').textContent='share of supply '+d.renewable_share_pct+'%';
+    $('k_fail').textContent=d.outage_risk.expected_failures_7d; $('k_fail_s').textContent=d.outage_risk.transformers_p7d_gt_10pct+' transformers >10% risk';
+    const ac=d.alert_counts, na=Object.values(ac).reduce((a,b)=>a+b,0); $('k_alerts').textContent=na; $('k_alerts_s').textContent=Object.keys(ac).length+' alert types';
+    $('k_cost').textContent='$'+fmt(d.dispatch_summary.fuel_cost_usd/1000)+'k'; $('k_cost_s').textContent=fmt(d.dispatch_summary.emissions_tco2)+' tCO2';
+    const lab=d.demand_forecast.map(r=>r.ts.slice(5,13).replace('T',' '));
+    chart('c_demand',{type:'line',data:{labels:lab,datasets:[
+      {label:'P90',data:d.demand_forecast.map(r=>r.p90),borderColor:'transparent',backgroundColor:'rgba(77,163,255,.18)',fill:'+1',pointRadius:0},
+      {label:'P10',data:d.demand_forecast.map(r=>r.p10),borderColor:'transparent',pointRadius:0},
+      {label:'Demand forecast',data:d.demand_forecast.map(r=>r.mw),borderColor:col.acc,pointRadius:0,tension:.3},
+      {label:'Renewables',data:d.renewable_forecast.map(r=>r.renewable_mw),borderColor:col.ok,pointRadius:0,tension:.3,yAxisID:'y'}]},
+      options:{plugins:{legend:{labels:{filter:i=>i.text!=='P10'&&i.text!=='P90'}}},scales:{x:{ticks:{maxTicksLimit:10}}}}});
+    chart('c_health',{type:'bar',data:{labels:Object.keys(h.components),datasets:[{data:Object.values(h.components),backgroundColor:col.acc}]},
+      options:{indexAxis:'y',plugins:{legend:{display:false}},scales:{x:{max:100}}}});
+    $('recs').innerHTML=d.recommendations.map(r=>`<li>${r}</li>`).join('');
+    const tiers=['critical','high','medium','low']; chart('c_tiers',{type:'doughnut',data:{labels:tiers,datasets:[{data:tiers.map(t=>d.equipment_health[t]||0),backgroundColor:[col.bad,'#ff8a4c',col.warn,col.ok]}]}});
+    chart('c_theft',{type:'bubble',data:{datasets:[{label:'suspects',data:d.theft_heatmap.map(c=>({x:c.cell_lon,y:c.cell_lat,r:3+c.suspects*2})),backgroundColor:'rgba(255,93,108,.55)'}]},
+      options:{plugins:{legend:{display:false}},scales:{x:{title:{display:true,text:'longitude'}},y:{title:{display:true,text:'latitude'}}}}});
+    $('t_theft').innerHTML='<tr><th>Region</th><th>Suspects</th><th>Rate</th><th>kWh/day</th></tr>'+d.theft_regions.map(r=>`<tr><td>${r.region_id}</td><td>${r.suspects}</td><td>${r.suspect_rate_pct}%</td><td>${fmt(r.loss_kwh_day)}</td></tr>`).join('');
+    $('t_alerts').innerHTML='<tr><th>Severity</th><th>Type</th><th>Asset</th><th>Message</th></tr>'+d.alerts.map(a=>`<tr><td><span class="pill ${a.severity}">${a.severity}</span></td><td>${a.type}</td><td>${a.asset_id}</td><td>${a.message}</td></tr>`).join('');
+  }catch(e){$('err').textContent='Error: '+e.message+' (is the API key valid?)'}
+}
+async function simulate(){
+  $('sim').textContent='Simulating…';
+  try{const o=await api('/simulate/plant-outage',{method:'POST',body:JSON.stringify({plant_id:$('plant').value||null,hours:24})});
+    $('sim').innerHTML=`<b>${o.plant}</b> (${o.plant_type}) – ${fmt(o.scheduled_output_lost_mw)} MW scheduled<br>Extra fuel cost: $${fmt(o.extra_fuel_cost_usd)}<br>Unserved energy: ${fmt(o.scenario.unserved_mwh)} MWh<br>Frequency nadir: ${o.frequency_event.nadir_hz} Hz (${o.frequency_event.status}), UFLS ${fmt(o.frequency_event.load_shed_mw)} MW<br><ul>${o.recommended_actions.map(a=>`<li>${a}</li>`).join('')}</ul>`}
+  catch(e){$('sim').textContent=e.message}
+}
+async function ask(text){
+  const q=text||$('q').value.trim(); if(!q) return; $('q').value='';
+  $('chat').innerHTML+=`<div class="me">You: ${q}</div>`;
+  try{const r=await api('/copilot/ask',{method:'POST',body:JSON.stringify({question:q})});
+    $('chat').innerHTML+=`<div>${r.answer.replace(/</g,'&lt;')}\n<span style="color:var(--mut)">[${r.intent} · ${r.confidence}]</span></div><br>`}
+  catch(e){$('chat').innerHTML+=`<div style="color:var(--bad)">${e.message}</div>`}
+  $('chat').scrollTop=1e9;
+}
+const examples=["Which transformer is likely to fail next week?","Forecast tomorrow's electricity demand.","Show regions with energy theft.","Recommend optimal load balancing.","Simulate a major power plant outage.","Explain why voltage instability occurred."];
+$('chips').innerHTML=examples.map(e=>`<button class="sec" onclick="ask(this.textContent)">${e}</button>`).join('');
+$('plant').innerHTML='<option value="">largest running plant</option>'+['P-001','P-002','P-003','P-004','P-005','P-006','P-007','P-008'].map(p=>`<option>${p}</option>`).join('');
+load();
+</script>
+<style>
+  :root{--bg:#0f1621;--card:#172233;--ink:#e7edf5;--mut:#8ea0b8;--line:#263449;--ok:#3ecf8e;--warn:#f5b942;--bad:#ff5d6c;--acc:#4da3ff}
+  @media (prefers-color-scheme: light){:root{--bg:#f3f6fa;--card:#fff;--ink:#16202e;--mut:#5d6b80;--line:#dbe3ee;--acc:#1769d1}}
+  *{box-sizing:border-box} body{margin:0;background:var(--bg);color:var(--ink);font:14px/1.45 system-ui,Segoe UI,Roboto,sans-serif}
+  header{display:flex;gap:12px;align-items:center;flex-wrap:wrap;padding:14px 20px;border-bottom:1px solid var(--line)}
+  header h1{font-size:17px;margin:0;flex:1;min-width:240px} input,button,select{background:var(--card);color:var(--ink);border:1px solid var(--line);border-radius:8px;padding:7px 10px;font:inherit}
+  button{cursor:pointer;background:var(--acc);color:#fff;border:0} button.sec{background:var(--card);color:var(--ink);border:1px solid var(--line)}
+  main{padding:18px 20px;display:grid;gap:14px;grid-template-columns:repeat(12,1fr)}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:14px;min-width:0} .card h2{margin:0 0 8px;font-size:13px;color:var(--mut);font-weight:600;letter-spacing:.03em;text-transform:uppercase}
+  .kpi{grid-column:span 2} .kpi .v{font-size:28px;font-weight:700} .kpi .s{color:var(--mut);font-size:12px}
+  .w6{grid-column:span 6}.w4{grid-column:span 4}.w8{grid-column:span 8}.w12{grid-column:span 12}
+  @media(max-width:1000px){.kpi{grid-column:span 4}.w6,.w4,.w8{grid-column:span 12}}
+  table{width:100%;border-collapse:collapse;font-size:13px} th,td{text-align:left;padding:5px 6px;border-bottom:1px solid var(--line)} th{color:var(--mut);font-weight:600}
+  .pill{padding:1px 8px;border-radius:99px;font-size:11px;font-weight:600} .critical{background:var(--bad);color:#fff}.high{background:#ff8a4c;color:#fff}.warning{background:var(--warn);color:#222}.info{background:var(--line)}
+  .good{color:var(--ok)}.fair{color:var(--warn)}.poor{color:var(--bad)} ul{margin:0;padding-left:18px} li{margin:4px 0}
+  #chat{height:240px;overflow:auto;border:1px solid var(--line);border-radius:8px;padding:8px;white-space:pre-wrap;font-size:13px;background:var(--bg)}
+  .me{color:var(--acc);font-weight:600} .row{display:flex;gap:8px;margin-top:8px} .row input{flex:1}
+  canvas{max-height:260px} #err{color:var(--bad);padding:0 20px}
+  .chips{display:flex;gap:6px;flex-wrap:wrap;margin-top:6px}.chips button{font-size:12px;padding:3px 9px}
+</style>
+</head>
+<body>
+<header>
+  <h1>⚡ Smart Grid Intelligence &amp; Energy Optimization — Executive Dashboard</h1>
+  <input id="key" value="demo-operator" size="16" title="X-API-Key">
+  <button onclick="load()">Refresh</button>
+  <span id="stamp" style="color:var(--mut)"></span>
+</header>
+<div id="err"></div>
+<main>
+  <div class="card kpi"><h2>Grid health score</h2><div class="v" id="k_health">–</div><div class="s" id="k_health_s"></div></div>
+  <div class="card kpi"><h2>24h peak demand</h2><div class="v" id="k_peak">–</div><div class="s" id="k_peak_s"></div></div>
+  <div class="card kpi"><h2>Renewable utilization</h2><div class="v" id="k_ren">–</div><div class="s" id="k_ren_s"></div></div>
+  <div class="card kpi"><h2>Expected failures (7d)</h2><div class="v" id="k_fail">–</div><div class="s" id="k_fail_s"></div></div>
+  <div class="card kpi"><h2>Open alerts</h2><div class="v" id="k_alerts">–</div><div class="s" id="k_alerts_s"></div></div>
+  <div class="card kpi"><h2>Dispatch cost (24h)</h2><div class="v" id="k_cost">–</div><div class="s" id="k_cost_s"></div></div>
+
+  <div class="card w8"><h2>Demand forecast (P10–P90) vs renewables, MW</h2><canvas id="c_demand"></canvas></div>
+  <div class="card w4"><h2>AI recommendations</h2><ul id="recs"></ul>
+    <h2 style="margin-top:14px">Health components</h2><canvas id="c_health" style="max-height:170px"></canvas></div>
+
+  <div class="card w4"><h2>Equipment health (transformer risk tiers)</h2><canvas id="c_tiers"></canvas></div>
+  <div class="card w4"><h2>Energy-theft heatmap (suspects by area)</h2><canvas id="c_theft"></canvas></div>
+  <div class="card w4"><h2>Theft by region</h2><table id="t_theft"></table></div>
+
+  <div class="card w8"><h2>Alert center</h2><table id="t_alerts"></table></div>
+  <div class="card w4"><h2>Scenario: power-plant outage</h2>
+    <div class="row"><select id="plant"></select><button onclick="simulate()">Simulate</button></div>
+    <div id="sim" style="margin-top:10px;font-size:13px"></div></div>
+
+  <div class="card w12"><h2>AI Grid Copilot</h2>
+    <div id="chat"></div>
+    <div class="row"><input id="q" placeholder="Ask: Which transformer is likely to fail next week?" onkeydown="if(event.key==='Enter')ask()"><button onclick="ask()">Ask</button></div>
+    <div class="chips" id="chips"></div></div>
+</main>
+<script>
+const $=id=>document.getElementById(id); const fmt=(n,d=0)=>Number(n).toLocaleString(undefined,{maximumFractionDigits:d});
+const H=()=>({'X-API-Key':$('key').value});
+async function api(path,opt={}){const r=await fetch('/api/v1'+path,{headers:{...H(),'Content-Type':'application/json'},...opt});
+  if(!r.ok){throw new Error(r.status+' '+(await r.text()))} return r.json()}
+const charts={};
+function chart(id,cfg){ if(typeof Chart==='undefined') return; if(charts[id]) charts[id].destroy(); charts[id]=new Chart($(id),cfg)}
+const col={acc:'#4da3ff',ok:'#3ecf8e',warn:'#f5b942',bad:'#ff5d6c',mut:'#8ea0b8'};
+async function load(){
+  $('err').textContent='';
+  try{
+    const d=await api('/dashboard');
+    $('stamp').textContent='as of '+d.generated_at.replace('T',' ').slice(0,16);
+    const h=d.grid_health; $('k_health').innerHTML=`<span class="${h.label}">${h.score}</span>`; $('k_health_s').textContent=h.label+' / 100';
+    $('k_peak').textContent=fmt(d.demand_peak_24h.peak_mw)+' MW'; $('k_peak_s').textContent='reserve margin '+d.demand_peak_24h.reserve_margin_pct+'%';
+    $('k_ren').textContent=d.renewable_utilization_pct+'%'; $('k_ren_s').textContent='share of supply '+d.renewable_share_pct+'%';
+    $('k_fail').textContent=d.outage_risk.expected_failures_7d; $('k_fail_s').textContent=d.outage_risk.transformers_p7d_gt_10pct+' transformers >10% risk';
+    const ac=d.alert_counts, na=Object.values(ac).reduce((a,b)=>a+b,0); $('k_alerts').textContent=na; $('k_alerts_s').textContent=Object.keys(ac).length+' alert types';
+    $('k_cost').textContent='$'+fmt(d.dispatch_summary.fuel_cost_usd/1000)+'k'; $('k_cost_s').textContent=fmt(d.dispatch_summary.emissions_tco2)+' tCO2';
+    const lab=d.demand_forecast.map(r=>r.ts.slice(5,13).replace('T',' '));
+    chart('c_demand',{type:'line',data:{labels:lab,datasets:[
+      {label:'P90',data:d.demand_forecast.map(r=>r.p90),borderColor:'transparent',backgroundColor:'rgba(77,163,255,.18)',fill:'+1',pointRadius:0},
+      {label:'P10',data:d.demand_forecast.map(r=>r.p10),borderColor:'transparent',pointRadius:0},
+      {label:'Demand forecast',data:d.demand_forecast.map(r=>r.mw),borderColor:col.acc,pointRadius:0,tension:.3},
+      {label:'Renewables',data:d.renewable_forecast.map(r=>r.renewable_mw),borderColor:col.ok,pointRadius:0,tension:.3,yAxisID:'y'}]},
+      options:{plugins:{legend:{labels:{filter:i=>i.text!=='P10'&&i.text!=='P90'}}},scales:{x:{ticks:{maxTicksLimit:10}}}}});
+    chart('c_health',{type:'bar',data:{labels:Object.keys(h.components),datasets:[{data:Object.values(h.components),backgroundColor:col.acc}]},
+      options:{indexAxis:'y',plugins:{legend:{display:false}},scales:{x:{max:100}}}});
+    $('recs').innerHTML=d.recommendations.map(r=>`<li>${r}</li>`).join('');
+    const tiers=['critical','high','medium','low']; chart('c_tiers',{type:'doughnut',data:{labels:tiers,datasets:[{data:tiers.map(t=>d.equipment_health[t]||0),backgroundColor:[col.bad,'#ff8a4c',col.warn,col.ok]}]}});
+    chart('c_theft',{type:'bubble',data:{datasets:[{label:'suspects',data:d.theft_heatmap.map(c=>({x:c.cell_lon,y:c.cell_lat,r:3+c.suspects*2})),backgroundColor:'rgba(255,93,108,.55)'}]},
+      options:{plugins:{legend:{display:false}},scales:{x:{title:{display:true,text:'longitude'}},y:{title:{display:true,text:'latitude'}}}}});
+    $('t_theft').innerHTML='<tr><th>Region</th><th>Suspects</th><th>Rate</th><th>kWh/day</th></tr>'+d.theft_regions.map(r=>`<tr><td>${r.region_id}</td><td>${r.suspects}</td><td>${r.suspect_rate_pct}%</td><td>${fmt(r.loss_kwh_day)}</td></tr>`).join('');
+    $('t_alerts').innerHTML='<tr><th>Severity</th><th>Type</th><th>Asset</th><th>Message</th></tr>'+d.alerts.map(a=>`<tr><td><span class="pill ${a.severity}">${a.severity}</span></td><td>${a.type}</td><td>${a.asset_id}</td><td>${a.message}</td></tr>`).join('');
+  }catch(e){$('err').textContent='Error: '+e.message+' (is the API key valid?)'}
+}
+async function simulate(){
+  $('sim').textContent='Simulating…';
+  try{const o=await api('/simulate/plant-outage',{method:'POST',body:JSON.stringify({plant_id:$('plant').value||null,hours:24})});
+    $('sim').innerHTML=`<b>${o.plant}</b> (${o.plant_type}) – ${fmt(o.scheduled_output_lost_mw)} MW scheduled<br>Extra fuel cost: $${fmt(o.extra_fuel_cost_usd)}<br>Unserved energy: ${fmt(o.scenario.unserved_mwh)} MWh<br>Frequency nadir: ${o.frequency_event.nadir_hz} Hz (${o.frequency_event.status}), UFLS ${fmt(o.frequency_event.load_shed_mw)} MW<br><ul>${o.recommended_actions.map(a=>`<li>${a}</li>`).join('')}</ul>`}
+  catch(e){$('sim').textContent=e.message}
+}
+async function ask(text){
+  const q=text||$('q').value.trim(); if(!q) return; $('q').value='';
+  $('chat').innerHTML+=`<div class="me">You: ${q}</div>`;
+  try{const r=await api('/copilot/ask',{method:'POST',body:JSON.stringify({question:q})});
+    $('chat').innerHTML+=`<div>${r.answer.replace(/</g,'&lt;')}\n<span style="color:var(--mut)">[${r.intent} · ${r.confidence}]</span></div><br>`}
+  catch(e){$('chat').innerHTML+=`<div style="color:var(--bad)">${e.message}</div>`}
+  $('chat').scrollTop=1e9;
+}
+const examples=["Which transformer is likely to fail next week?","Forecast tomorrow's electricity demand.","Show regions with energy theft.","Recommend optimal load balancing.","Simulate a major power plant outage.","Explain why voltage instability occurred."];
+$('chips').innerHTML=examples.map(e=>`<button class="sec" onclick="ask(this.textContent)">${e}</button>`).join('');
+(async()=>{await load(); try{const i=await api('/info'); const p=await api('/optimization/dispatch?horizon=1'); }catch(e){}
+  try{const s=await api('/info'); }catch(e){}
+  $('plant').innerHTML='<option value="">largest running plant</option>'+['P-001','P-002','P-003','P-004','P-005','P-006','P-007','P-008'].map(p=>`<option>${p}</option>`).join('')})();
+</script>
+</body>
+</html>

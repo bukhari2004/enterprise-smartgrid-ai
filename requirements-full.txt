@@ -1,0 +1,11 @@
+-r requirements.txt
+# --- optional production components (auto-detected at runtime, graceful fallback if absent) ---
+xgboost>=2.0            # replaces sklearn gradient boosting for demand / failure models
+prophet>=1.1            # optional demand baseline
+kafka-python>=2.0       # Kafka ingestion
+redis>=5.0              # cache
+psycopg2-binary>=2.9    # PostgreSQL
+neo4j>=5.18             # knowledge-graph export
+gymnasium>=0.29         # RL environments
+stable-baselines3>=2.3  # PPO battery agent
+langgraph>=0.2          # LangGraph copilot pipeline

@@ -1,0 +1,102 @@
+[init] simulate grid           0.45s
+[init] demand forecaster       7.31s
+[init] renewable forecaster    1.43s
+[init] predictive maint.       0.57s
+[init] theft detector          0.61s
+[init] knowledge graph         0.13s
+
+======== SCALE / BACKENDS ========
+{
+ "scale": {
+  "plants": 8,
+  "substations": 24,
+  "transformers": 150,
+  "meters": 3000,
+  "renewable_assets": 14,
+  "history_days": 365
+ },
+ "ml_backend": "sklearn-histgb",
+ "bus": "memory",
+ "cache": "memory",
+ "db": "sqlite"
+}
+
+======== DEMAND FORECAST ========
+{'backend': 'sklearn-histgb', 'backtest_days': 7, 'day_ahead_mape_pct': 0.63, 'seasonal_naive_mape_pct': 1.29, 'peak_error_pct': 0.98, 'train_rows': 51552}
+9433.6 MW peak tomorrow
+
+======== RENEWABLES ========
+{'solar': {'r2': 0.999, 'mae_pct_of_capacity': 0.38}, 'wind': {'r2': 0.997, 'mae_pct_of_capacity': 0.46}}
+
+======== LP DISPATCH (24h) ========
+{'status': 'optimal', 'fuel_cost_usd': 3492623, 'emissions_tco2': 58311, 'unserved_mwh': 0.0, 'renewable_share_pct': 10.5, 'curtailed_mwh': 0.0, 'avg_price_usd_mwh': 38.7, 'peak_price_usd_mwh': 41.9, 'thermal_mwh': 171456}
+
+======== RL BATTERY ========
+[init] battery RL train       10.77s
+{'metric': 'avg daily arbitrage profit (USD) on held-out days', 'test_days': 30, 'note': 'rule = fixed price thresholds (no foresight); lp_optimal = perfect-foresight upper bound', 'idle': 0.0, 'rule': 33185.0, 'rl': 34386.0, 'lp_optimal': 53123.0, 'rl_vs_rule_pct': 3.6, 'rl_pct_of_optimal': 64.7}
+
+======== PREDICTIVE MAINTENANCE ========
+{'backend': 'sklearn-histgb', 'roc_auc': 0.802, 'pr_auc': 0.251, 'base_rate_pct': 7.44, 'recall_in_top_10pct': 0.373}
+{'roc_auc': 0.953, 'actual_failures': 20, 'failures_in_top_20': 13}
+
+======== THEFT DETECTION ========
+{'labelled_meters': 1044, 'holdout_meters': 1956, 'holdout_roc_auc_blend': 0.948, 'holdout_roc_auc_isolation_forest': 0.847, 'holdout_pr_auc_blend': 0.665, 'precision_at_top_100_holdout': 0.51, 'base_rate_pct': 4.0}
+
+======== GRAPH ========
+{'nodes': 6287, 'edges': 6338, 'node_types': {'Meter': 3000, 'Consumer': 3000, 'Transformer': 150, 'Incident': 40, 'TransmissionLine': 39, 'Substation': 24, 'RenewableAsset': 14, 'PowerPlant': 8, 'Region': 6, 'MaintenanceTeam': 6}, 'relationships': {'SERVES': 3000, 'OWNS': 3000, 'SUPPLIES': 150, 'AFFECTED': 40, 'POWERS': 39, 'FEEDS': 39, 'LOCATED_IN': 32, 'MAINTAINS': 24, 'INJECTS_INTO': 14}}
+
+======== STREAM THROUGHPUT ========
+{'events': 1000000, 'events_per_sec': 6358395.7449613605}
+
+======== COPILOT ========
+
+> Which transformer is likely to fail next week?
+Top transformer risks over the next 7 days:
+• T-00036 (R6): 27.3% chance of failure in 7 days, 20 customers, tier critical
+• T-00006 (R6): 25.1% chance of failure in 7 days, 20 customers, tier critical
+• T-00141 (R3): 21.2% chance of failure in 7 days, 20 customers, tier critical
+• T-00082 (R4): 20.7% chance of failure in 7 days, 20 customers, tier critical
+• T-00085 (R1): 18.4% chance of failure in 7 days, 20 customers, tier critical
+Why: T-00036 has a 74.5% 30-day failure probability (critical). Main drivers: dga_h2_ppm=465.99 (+68.6pp), vibration_mm_s=3.02 (+35.66pp), age_years=41.93 (+34.79pp)
+Recommended: run full dissolved-gas analysis (DGA) and re-test in 2 weeks; mechanical inspection (core / clamping / tap changer); include in asset-replacement planning
+
+> Forecast tomorrow's electricity demand.
+Demand forecast for 2026-11-01: peak 9434 MW at 19:00, average 7995 MW, daily energy 192 GWh.
+• 80% interval at peak: 9282-9786 MW
+• model day-ahead error in back-test: 0.63% MAPE (seasonal-naive: 1.29%)
+Why: hour-of-day 20:00 (weekend); temperature 20.7°C vs 22.5°C a week earlier
+
+> Show regions with energy theft.
+Regions with the highest share of suspected energy theft:
+• R1: 3.4% of meters flagged, ~149 kWh/day unbilled
+• R6: 3.4% of meters flagged, ~159 kWh/day unbilled
+• R2: 2.6% of meters flagged, ~398 kWh/day unbilled
+Why: Isolation-Forest + supervised blend, holdout ROC-AUC 0.948
+Recommended: inspect highest-score meters first (GET /theft/suspects)
+
+> Recommend optimal load balancing.
+Optimal 24h dispatch costs $3,492,623 with 10.5% renewables and 0 MWh unserved.
+• no substation exceeds 80% loading in the forecast - no transfers needed
+Why: multi-period LP minimises fuel cost subject to ramp limits, must-run units and battery constraints
+
+> Simulate a major power plant outage.
+Losing P-003 (coal, 3200 MW scheduled) adds $188,538 fuel cost over 24h (emissions change -451 tCO2).
+• frequency nadir 48.567 Hz (critical), UFLS 2716 MW
+• unserved energy after re-dispatch: 0 MWh
+• customers islanded by topology: 0
+Recommended: frequency nadir is outside secure limits - increase spinning reserve / battery fast response before the contingency
+
+> Explain why voltage instability occurred.
+S-007 sits at 0.949 pu (warning). Largest depressing factor: heavy loading (-0.067 pu). Loading is 98% of capacity.
+• heavy loading: -0.067 pu
+• long feeder drop: -0.022 pu
+• renewable output ramp: -0.007 pu
+• reactive support (cap bank): +0.015 pu
+Why: at 80% loading the voltage would be about 0.975 pu. No instability in the current forecast (lowest voltage 0.9917 pu). Explained instead for a stress case (+8°C heat-wave and a 45% emergency demand surge): S-007 falls to 0.9491 pu.
+Recommended: transfer load to neighbouring substations (see /optimization/load-balance); adjust on-load tap changer (+1 to +2 taps)
+
+======== BONUS ========
+EV peak reduction %: 8.0 | carbon @ $80/t reduction %: 57.8
+
+======== AUDIT CHAIN ========
+{'valid': True, 'records': 7}
